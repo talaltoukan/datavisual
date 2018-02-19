@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Countries Mentioned in US Diplomatic Cables</title>
+
+<style>
+
+@import 'css/style.css';
+
+#chart {
+	margin-left: -40px;
+	height: 506px;
+}
+
+text {
+	font: 10px sans-serif;
+}
+
+.dot {
+	stroke: #000;
+}
+
+.axis path, .axis line {
+	fill: none;
+	stroke: #000;
+	shape-rendering: crispEdges;
+}
+
+.label {
+	fill: #000;
+}
+
+.year.label {
+	font: 300 196px "Helvetica Neue";
+	fill: #ddd; 
+}
+
+.year.label.active {
+	fill: #aaa;
+}
+
+.overlay {
+	fill: none;
+	pointer-events: all;
+	cursor: ew-resize;
+}
+
+.yearStrip {
+	display: none;
+}
+
+</style>
+
+</head>
+
+<h1> Countries Mentioned in US Diplomatic Cables 1950-1979 <h2> 
+
+<p id="chart"></p>
+
+<script src="js/d3.js" charset="utf-8"></script>
+
+<script> 
+ function n(d) {return d.name;}
+ function x(d) { return d.income; }
+ function y(d) { return d.lifeExpectancy; }
+ function radius(d) { return d.population; }
+ function color(d) { return d.region; }
+ function key(d) { return d.name; }
+
+// Chart dimensions
+var margin = {top:20, right: 50, bottom: 20, left: 80},
+	width = 1000 - margin.right - margin.left,
+	height = 500 - margin.top - margin.bottom;
+
+//Scales for each variable
+var xScale = d3.scale.log()
+			.domain([1,4935])
+			.range([0, width - 100]),
+	yScale = d3.scale.linear()
+			.domain([0, 2000])
+			.range([height, 0]),
+	radiusScale = d3.scale.linear()
+			.domain([0.00000253, 0.3194995])
+			.range([5, 30]),
+	colorScale = d3.scale.category10();
+
+//The axes
+var xAxis = d3.svg.axis().scale(xScale)
+			.orient("bottom")
+			.ticks(20, ",.1s"); //.ticks(20, d3.format(",d")), 
+	yAxis = d3.svg.axis().scale(yScale).orient("left");
+
+
+//Create SVG container and set the origin
+var svg = d3.select("#chart").append("svg")
+	.attr("width", width + margin.left + margin.right) 
+	.attr("height", height + margin.top + margin.bottom)
+	.append("g")
+	.attr("transform", "translate(" + margin.left  + "," + margin.top + ")");
+
+//Add x- and y-axis
+svg.append("g")
+	.attr("class", "x axis") 
+	.attr("transform", "translate(0," + height + ")")
+	.call(xAxis)
+
+svg.append("g")
+	.attr("class", "y axis")
+	.call(yAxis);
+
+//Add x- and y-axis labels
+
+
+//Add the year label; the value is set on transition
+var label = svg.append("text")
+    .attr("class", "year label")
+    .attr("text-anchor", "end")
+    .attr("y", height - 24)
+    .attr("x", width - 200)
+    .text(1950);
+
+d3.json("nations.json", function(nations) {
+	var bisect = d3.bisector(function(d) {  return d[0]; });
+
+	// Add an overlay for the year label.
+	var box = label.node().getBBox();
+	
+	// Add rectangle strip below year label.
+	var yearStrip = svg.append("rect")
+						.attr("class", "yearStrip")
+						.attr("width", box.width - 20)
+						.attr("height", 10)
+						.attr("x", box.x + 20)
+						.attr("y", box.y + box.height - 30)
+						.style("fill", "black")
+						.style("opacity", 0.1);
+
+/*				
+	var stripLabel = svg.append("text")
+						.attr("x", (box.x + box.width/2))
+						.attr("y", box.y + box.height - 24)
+						.attr("dy", ".35em")
+						.style("font-family", "Arial")
+						.style("opacity", "0.5")
+						.text("Adjust Year");
+*/
+
+	//Add a dot per nation. Initialize the data at 1950, and set the colors.
+	var circles = svg.append("g")
+			.attr("class", "dots")
+			.selectAll(".dot")
+			.data(parseData(1950))
+			.enter()
+			.append("circle")
+			.attr("class", "dot")
+			.call(circleAttributes)
+			.sort(order)
+
+	function circleAttributes(dot){
+				dot
+				.attr("cx", function(d) {return xScale(x(d));})
+				.attr("cy", function(d) {return yScale(y(d));})
+				.attr("r", function(d) {return radiusScale(radius(d));})
+				.style("fill", function(d) {return colorScale(color(d));})
+				.attr("opacity", 0.7)
+				.on("mouseover", bubbleMOver)
+				.on("mouseout", bubbleMOut);
+	}
+	
+	// Defines a sort order so that the smallest dots are drawn on top.
+	function order(a, b) {
+    	return radius(b) - radius(a);
+	}
+	
+	var overlay = svg.append("rect")
+		.attr("class", "overlay")
+		.attr("x", box.x + 20)
+		.attr("y", box.y + box.height - 30)
+		.attr("width", box.width - 20)
+		.attr("height", box.height - 100)
+		.on("mouseover", enableInteraction);
+	
+	svg.transition()
+		.duration(35000)
+		.ease("linear")
+		.tween("year", tweenYear)
+
+	function enableInteraction(){
+	
+		var yearScale = d3.scale.linear()
+				.domain([1950, 1979])
+				.range([box.x, box.x + box.width])
+				.clamp(true);
+
+		svg.transition().duration(0);
+		label.classed("active", true);
+      	yearStrip.style("opacity", 0.4);
+		
+		overlay
+        .on("mouseover", mouseover)
+        .on("mouseout", mouseout)
+        .on("mousemove", mousemove)
+        .on("touchmove", mousemove);
+
+    	function mouseover() {
+    		label.classed("active", true);
+    		yearStrip.style("opacity", 0.4);
+    	}
+
+    	function mouseout() {
+      		label.classed("active", false);
+      		 yearStrip.style("opacity", 0.1);
+    	}
+
+    	function mousemove() {
+      		displayYear(yearScale.invert(d3.mouse(this)[0]));
+    	}
+	}		
+
+	function bubbleMOver(d, i) {
+		svg.transition().duration(0); 
+	    d3.select(this).attr("opacity", 1);     
+		d3.select(this).attr("r", 15);
+		makeVLine(d);
+		makeHLine(d);
+		
+		//Temporary label on the x-axis
+		svg.append("text").attr({
+			id: "xLabel" +  Math.round(d.income) + "y" +  Math.round(d.lifeExpectancy), 
+			x: xScale(d.income) + 2,
+			y: height - 3,  
+			fill: colorScale(d.region)
+		})
+		.style("font-weight", "bold")
+		.text(d.income);
+
+
+		//Temporary label on the y-axis
+		svg.append("text").attr({
+			id: "yLabel" +  Math.round(d.lifeExpectancy) + "x" +  Math.round(d.income), 
+			x: 3,
+			y: yScale(d.lifeExpectancy) - 2,
+			fill: colorScale(d.region)
+		})
+		.style("font-weight", "bold")
+		.text(d.lifeExpectancy);
+		
+		//Temporary name on the x-axis
+		svg.append("text").attr({
+			id: "nameLabel" + Math.round(d.lifeExpectancy) + "x" +  Math.round(d.income), 
+			x: xScale(d.income) - (d.name.length * 3 + 20),
+			y: yScale(d.lifeExpectancy),
+			fill: d3.rgb(colorScale(d.region)).darker(1)
+		})
+		.attr("text-anchor", "middle")
+		.style("font-weight", "bold")
+		.text(d.name);
+		
+	}
+
+	function bubbleMOut(d, i) {
+		d3.select(this).attr("opacity", 0.7); 
+		d3.select(this).attr("r", radiusScale(d.population));
+		d3.select("#vLine").remove();
+		d3.select("#hLine").remove();
+		d3.select("#xLabel" +  Math.round(d.income) + "y" +  Math.round(d.lifeExpectancy)).remove();	
+		d3.select("#yLabel" +  Math.round(d.lifeExpectancy) + "x" +  Math.round(d.income)).remove();
+		d3.select("#nameLabel" + Math.round(d.lifeExpectancy) + "x" +  Math.round(d.income)).remove();
+	}
+
+	function makeVLine(dot){
+				svg.append("line")
+				.attr("id", "vLine")			
+				.attr("x1", xScale(dot.income))
+				.attr("y1", yScale(dot.lifeExpectancy))
+				.attr("x2", xScale(dot.income))
+				.attr("y2", height)
+				.attr("stroke-width", 1)
+				.attr("stroke", colorScale(dot.region));
+	}
+
+	function makeHLine(dot){
+				svg.append("line")
+				.attr("id", "hLine")
+				.attr("x1", xScale(dot.income))
+				.attr("y1", yScale(dot.lifeExpectancy))
+				.attr("x2", 0)
+				.attr("y2", yScale(dot.lifeExpectancy))
+				.attr("stroke-width", 1)
+				.attr("stroke", colorScale(dot.region));
+	}
+
+	function tweenYear(){
+		var year = d3.interpolateNumber(1950,1979);
+		return function(t) {displayYear(year(t));};
+	}
+
+   	function displayYear(year) {
+		circles.data(parseData(year)).call(circleAttributes).sort(order);
+		label.text(Math.round(year));
+	}
+
+	function parseData(year) {
+		return nations.map(function(d) {
+			return {
+			name: d.name,
+			region: d.region,
+			income: getYear(d.income, year, d.name),
+			population: getYear(d.population, year, d.name),    //interpolateValues(d.population, year),
+			lifeExpectancy: getYear(d.lifeExpectancy, year, d.name)
+			};
+		});
+	}
+	
+
+	function getYear(values, year, name){
+		if(year > values[values.length-1][0]){
+			a = values[values.length-1]
+		} else {
+			var i = bisect.left(values, year, 0, values.length - 1), 
+				a = values[i];
+
+			if(i > 0){
+				var b = values[i - 1];
+				t = (year - a[0])/(b[0] - a[0]);
+				 if(t <= -1){ 
+					console.log(name);
+					console.log("year: " + year + " - a: " + a[0] + "/" + "b :" + b[0] + " - a: " + a[0]);		
+					console.log("EQUALS: " + t);	
+				} 
+							
+				var newValue = (a[1] * (1-t)) + (b[1] * (t));
+				return newValue;  
+			}
+		}
+		return a[1]; 
+	}
+
+//Add legend
+var legend = svg.selectAll(".legend") 
+     .data(colorScale.domain()) 
+    .enter().append("g") 
+     .attr("class", "legend") 
+     .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; }); 
+  
+     legend.append("rect") 
+       .attr("x", width - 18) 
+       .attr("width", 10) 
+       .attr("height", 10) 
+       .style("fill", colorScale); 
+  
+     legend.append("text") 
+       .attr("x", width - 24) 
+       .attr("y", 9) 
+       .attr("dy", ".35em") 
+       .style("text-anchor", "end") 
+       .text(function(d) { return d; }); 
+
+});
+
+</script>
+
